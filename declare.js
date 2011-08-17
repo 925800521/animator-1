@@ -292,6 +292,7 @@ var core = {};
          */
         function createEvent (originalEvent, name)
         {
+        	//Overwrite original event method with a new one which will call its original implementation and all event listeners
         	var newEvent = function () {
 				var ret = originalEvent.apply(this, arguments);
                 var listeners = this.construct.listeners;
@@ -320,6 +321,7 @@ var core = {};
                 return ret;
 			};
 			
+			//Create bind() method within new event method which will allow to bind listeners to event
 			newEvent.bind = function (handler) {
 				var name = arguments.callee.eventName;
 				var scope = arguments.callee.eventScope;
@@ -330,6 +332,7 @@ var core = {};
 				scope.construct.listeners[name].push(handler);
 			};
 			
+			//Create unbind() method within new event method which will allow to unbind listeners from event
 			newEvent.unbind = function (handler) {
 				var name = arguments.callee.eventName;
 				var scope = arguments.callee.eventScope;
@@ -350,8 +353,8 @@ var core = {};
 				}
 			};
 			
+			//Create reference to original method (will be required in inheritance)
 			newEvent.original = originalEvent;
-			newEvent.name = name;
 			
 			return newEvent;
         }
@@ -362,15 +365,20 @@ var core = {};
         var Class = function () {
         	var constructArgs = arguments;
         	
+        	//Find all on* methods and add pointers for proper scope and name to bind & unbind methods
         	for (var name in this)
         	{
         		if (this[name] instanceof Function && name.substr(0, 2) == 'on')
         		{
         			this[name].bind.eventScope = this;
         			this[name].bind.eventName = name;
+        			this[name].unbind.eventScope = this;
+        			this[name].unbind.eventName = name;
         		}
         	}
         	
+        	//Because construct() method will be used to contain listeners for events, we have to create
+        	//new construct() method to be its separate instance within all class instances.
         	(function (originalConstruct, scope) {
         		scope.construct = function () {
         			return originalConstruct.apply(scope, arguments);
@@ -403,6 +411,7 @@ var core = {};
         
         //Prepare definition to be imported into prototype
         var prepared = prepareDefinition(definition, SuperClass ? SuperClass.prototype : {
+        	//Default construct() method
             construct: function () {},
             
             //Default configure() method

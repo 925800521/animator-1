@@ -15,10 +15,6 @@ var core = {};
  * Important notes:
  * 
  * - to call inherited implementation from method, use this.inherited() call
- * - mixins allows adding additional functionality into classes. List of mixins is
- *   provided in form of Array containing classes or simple definition objects.
- * - super class and class definition takes precedence over mixins (their methods
- *   and properties will overwrite the imported ones from mixins) 
  * - for all properties there are automatically generated getters, setters and
  *   resetters. For example if you declare property `foo`, the following methods
  *   will be automatically created: setFoo(value), value getFoo(void), value resetFoo(void)
@@ -48,36 +44,6 @@ var core = {};
  * 
  * var a = new A();
  * var b = new B();
- * 
- * //example (using mixins):
- * 
- * var mixin1 = core.declare({
- *     bar1: function () {
- *         console.log('mixin1::bar1');
- *     }
- * });
- * 
- * var mixin2 = core.declare({
- *     bar2: function () {
- *         console.log('mixin2::bar2');
- *     }
- * });
- * 
- * //mixin can be also in form of literal object:
- * var mixin3 = {
- *     bar3: function () {
- *          console.log('mixin3::bar3');
- *     }
- * };
- * 
- * var C = core.declare(B, [mixin1, mixin2], {
- *      foo: function () {
- *          console.log('C::foo');
- *          this.bar1();
- *          this.bar2();
- *          this.bar3();
- *      }
- * });
  * 
  * //example (built-in events mechanism):
  * 
@@ -274,7 +240,7 @@ var core = {};
                                 throw 'Types mismatch: ' + name + ': ' + inhertedType + ' expected, ' + memberType + ' given';
                             }
                             
-                            member.inherited = inherited;
+                            member.inherited = inherited.original || inherited;
                         }
                         //if types of both inherited and member are equal, or inherited is null or undefined, simply
                         //override the property with new one
@@ -290,7 +256,7 @@ var core = {};
                     //member is a method and does not exist in parent implementation, so just copy it
                     else if (inherited instanceof Function)
                     {
-                        prepared.methods[name] = inherited;
+                        prepared.methods[name] = inherited.original || inherited;
                     }
                     //member is a property and does not exist in parent implementation, so just copy it
                     else
@@ -324,98 +290,97 @@ var core = {};
         /**
          * Creates event method (name matches on*) in given scope.
          */
-        function createEvent (scope, name) {
-            var original = scope[name];
-            
-            //override original on* method with virtual one that will call its original implementation and all listeners
-            scope[name] = function () {
-                var ret = original.apply(scope, arguments);
-                var listeners = arguments.callee.listeners;
+        function createEvent (originalEvent, name)
+        {
+        	var newEvent = function () {
+				var ret = originalEvent.apply(this, arguments);
+                var listeners = this.construct.listeners;
                 
-                if (ret !== false && listeners && listeners.length > 0)
+                if (ret !== false && listeners && listeners[name] && listeners[name].length > 0)
                 {
-                    var args = [scope];
+                    var args = [this];
+                    var length = arguments.length;
                     
-                    for (var i = 0; i < arguments.length; i++)
+                    for (var i = 0; i < length; i++)
                     {
                         args.push(arguments[i]);
                     }
                     
-                    for (i = 0; i < listeners.length; i++)
+                    length = listeners[name].length;
+                    
+                    for (i = 0; i < length; i++)
                     {
-                        if (listeners[i] instanceof Function)
+                        if (listeners[name][i] instanceof Function)
                         {
-                            listeners[i].apply(scope, args);
+                            listeners[name][i].apply(this, args);
                         }
                     }
                 }
                 
                 return ret;
-            };
-            
-            //Create bind function within on* method to allow binding listeners
-            scope[name].bind = function (listener) {
-                if (!arguments.callee.bindsTo.listeners)
-                {
-                    arguments.callee.bindsTo.listeners = [listener];
-                }
-                else
-                {
-                    arguments.callee.bindsTo.listeners.push(listener);
-                }
-            };
-            
-            //Create unbind function within on* method to allow unbinding listeners
-            scope[name].unbind = function (listener) {
-                var listeners = arguments.callee.bindsTo.listeners;
-                
-                if (listeners)
-                {
-                    for (var i in listeners)
-                    {
-                        if (listeners[i] === listener)
-                        {
-                            delete listeners[i];
-                            break;
-                        }
-                    }
-                }
-            };
-            
-            scope[name].original = original;
-            scope[name].bind.bindsTo = scope[name];
-            scope[name].unbind.bindsTo = scope[name];
+			};
+			
+			newEvent.bind = function (handler) {
+				var name = arguments.callee.eventName;
+				var scope = arguments.callee.eventScope;
+				
+				if (!scope.construct.listeners) scope.construct.listeners = {};
+				if (!scope.construct.listeners[name]) scope.construct.listeners[name] = [];
+				
+				scope.construct.listeners[name].push(handler);
+			};
+			
+			newEvent.unbind = function (handler) {
+				var name = arguments.callee.eventName;
+				var scope = arguments.callee.eventScope;
+				
+				if (scope.construct.listeners && scope.construct.listeners[name])
+				{
+					var listeners = scope.construct.listeners[name];
+					var length = listeners.length;
+					
+					for (var i = 0; i < length; i++)
+					{
+						if (listeners[i] === handler)
+						{
+							delete listeners[i];
+							break;
+						}
+					}
+				}
+			};
+			
+			newEvent.original = originalEvent;
+			newEvent.name = name;
+			
+			return newEvent;
         }
         
         /**
          * This will be our new class
          */
         var Class = function () {
-    
-            for (var name in this)
-            {
-                //While constructing class, find all on* methods and create event on them
-                if (this[name] instanceof Function)
-                {
-                    if (name.substr(0, 2) == 'on')
-                    {
-                        createEvent(this, name);
-                    }
-                }
-                //Otherwise create a clone of the property (if not cloned, multiple instances of the same class will
-                //share the same property if the property is object, what is really wrong and dangerous)
-                else
-                {
-                    this[name] = clone(this[name]);
-                }
-            }
-            
-            //Call the constructor if enabled
-            if (this.construct && !this.construct.disabled)
-            {
-                this.construct.apply(this, arguments);
-            }
-            
+        	var constructArgs = arguments;
+        	
+        	for (var name in this)
+        	{
+        		if (this[name] instanceof Function && name.substr(0, 2) == 'on')
+        		{
+        			this[name].bind.eventScope = this;
+        			this[name].bind.eventName = name;
+        		}
+        	}
+        	
+        	(function (originalConstruct, scope) {
+        		scope.construct = function () {
+        			return originalConstruct.apply(scope, arguments);
+        		};
+        		
+        		if (!originalConstruct.disabled)
+        		{
+        			originalConstruct.apply(scope, constructArgs);
+        		}
+        	})(this.construct, this);  
         };
         
         if (SuperClass)
@@ -438,6 +403,7 @@ var core = {};
         
         //Prepare definition to be imported into prototype
         var prepared = prepareDefinition(definition, SuperClass ? SuperClass.prototype : {
+            construct: function () {},
             
             //Default configure() method
             configure: function (options) {
@@ -480,13 +446,20 @@ var core = {};
         //Import properties
         for (var name in prepared.properties)
         {
-            Class.prototype[name] = prepared.properties[name];
+            Class.prototype[name] = clone(prepared.properties[name]);
         }
         
         //Import methods
         for (name in prepared.methods)
         {
-            Class.prototype[name] = prepared.methods[name];
+        	if (name.substr(0, 2) == 'on')
+        	{
+        		Class.prototype[name] = createEvent(prepared.methods[name], name);
+        	}
+        	else
+        	{
+        		Class.prototype[name] = prepared.methods[name];
+        	}
         }
         
         //Create special inherited() method

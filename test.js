@@ -1,5 +1,5 @@
 window.onload = function () {
-    var a1 = new Animator({
+    /*var a1 = new Animator({
         element: document.getElementById('test'),
         loops: 1,
         timing: 'ease-in', //default timing, will be used as timing for additional keyframe creating loop
@@ -33,7 +33,35 @@ window.onload = function () {
             backgroundColor: '#fbb',
             borderWidth: 0
         }]
-    });
-    
+    });*/
+	
+	var a1 = new Animator({
+		element: document.getElementById('test'),
+		duration: 1000,
+		loops: 1,
+		timing: 'ease-in',
+		keyframes: [{
+			duration: 3000,
+			left: 100,
+			top: 200,
+			backgroundColor: 'rgba(255, 0, 0, 0)'
+		}, {
+			left: 200,
+			top: 0,
+            width: 250,
+            duration: 2000,
+            backgroundColor: 'rgba(255, 255, 0, 0.5)'
+		}, {
+			left: 300,
+			top: 200,
+            height: 400,
+            backgroundColor: 'rgba(255, 255, 0, 1)'
+		}, {
+			left: 400,
+			top: 0,
+            borderColor: '#00f'
+		}]
+	});
+
     a1.animate();
 };
